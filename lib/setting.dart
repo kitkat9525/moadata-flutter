@@ -174,7 +174,7 @@ class SettingScreenState extends State<SettingScreen> {
         byteAlignment: ImageUploadAlignment.fourByte,
         eraseAppSettings: true,
         pipelineDepth: 1,
-        firmwareUpgradeMode: FirmwareUpgradeMode.testOnly,
+        firmwareUpgradeMode: FirmwareUpgradeMode.testAndConfirm,
       );
 
       await updateManager.updateWithImageData(
