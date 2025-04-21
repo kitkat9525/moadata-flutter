@@ -17,6 +17,9 @@ class SettingScreen extends StatefulWidget {
 }
 
 class SettingScreenState extends State<SettingScreen> {
+  double _progress = 0.0;
+  void Function(VoidCallback fn)? _dialogSetState;
+
   @override
   void initState() {
     super.initState();
@@ -77,6 +80,23 @@ class SettingScreenState extends State<SettingScreen> {
               'KOREA (KR)',
               style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
             ),
+            Spacer(),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () => _firmwareOverTheAir(widget.device.id),
+                icon: Icon(Icons.system_update),
+                label: Text('OTA update'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(
+                      0xFF00A9CE), // Change this to any color you want
+                  foregroundColor: Colors.white, // Text and icon color
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  textStyle:
+                      TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -90,7 +110,9 @@ class SettingScreenState extends State<SettingScreen> {
         allowedExtensions: ['bin'],
       );
 
-      if (result == null || result.files.single.path == null) return;
+      if (result == null || result.files.single.path == null) {
+        return;
+      }
 
       final file = File(result.files.single.path!);
       final imageData = await file.readAsBytes();
@@ -99,31 +121,47 @@ class SettingScreenState extends State<SettingScreen> {
       final updateManager = await managerFactory.getUpdateManager(deviceId);
       final updateStream = updateManager.setup();
 
+      setState(() {
+        _progress = 0.0;
+        _showDialog();
+      });
+
       updateManager.updateStateStream?.listen(
         (event) {
           debugPrint('firmware update state: $event');
 
           if (event == FirmwareUpgradeState.success) {
             debugPrint('firmware update was successful.');
+            _hideDialog();
           }
         },
         onDone: () async {
           await updateManager.kill();
           if (mounted) {
             debugPrint('firmware update was successful.');
+            _hideDialog();
           }
         },
         onError: (error) async {
           await updateManager.kill();
           if (mounted) {
             debugPrint('firmware update failed: $error');
+            _hideDialog();
           }
         },
       );
 
       updateManager.progressStream.listen((event) {
         if (mounted) {
-          debugPrint('firmware update: ${event.bytesSent} / ${event.imageSize} bytes.');
+          debugPrint(
+              'firmware update: ${event.bytesSent} / ${event.imageSize} bytes.');
+          setState(() {
+            _progress = event.bytesSent / event.imageSize;
+
+            if (_dialogSetState != null) {
+              _dialogSetState!(() {});
+            }
+          });
         }
       });
 
@@ -136,7 +174,7 @@ class SettingScreenState extends State<SettingScreen> {
         byteAlignment: ImageUploadAlignment.fourByte,
         eraseAppSettings: true,
         pipelineDepth: 1,
-        firmwareUpgradeMode: FirmwareUpgradeMode.uploadOnly,
+        firmwareUpgradeMode: FirmwareUpgradeMode.testOnly,
       );
 
       await updateManager.updateWithImageData(
@@ -145,6 +183,42 @@ class SettingScreenState extends State<SettingScreen> {
       );
     } catch (e) {
       debugPrint('Firmware update error: $e');
+      _hideDialog();
     }
+  }
+
+  void _showDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            _dialogSetState = setState; // capture setState from StatefulBuilder
+            return AlertDialog(
+              title: const Text('OTA update'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('uploading new signed image...'),
+                  const Text('(업로드 완료 후 디바이스 리부팅 1분 소요)'),
+                  const SizedBox(height: 20),
+                  LinearProgressIndicator(value: _progress),
+                  const SizedBox(height: 10),
+                  Text('${(_progress * 100).toStringAsFixed(1)}%'),
+                ],
+              ),
+              actions: [],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _hideDialog() {
+    setState(() {
+      Navigator.of(context, rootNavigator: true).pop();
+    });
   }
 }

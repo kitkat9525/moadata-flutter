@@ -64,13 +64,26 @@ class DataScreenState extends State<DataScreen> {
   }
 
   void _onDataReceived(List<int> data) {
+    final hexDump =
+        data.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
+    debugPrint('Received (${data.length} bytes): [$hexDump]');
+
+    if (data.length < 37) {
+      debugPrint('⚠️ Insufficient data length. Skipping frame.');
+      return;
+    }
+
     final byteData = ByteData.sublistView(Uint8List.fromList(data));
 
-    final leds = List.generate(6, (i) => byteData.getUint32(i * 4, Endian.little).toDouble());
+    final leds = List.generate(
+      6,
+      (i) => byteData.getUint32(7 + i * 4, Endian.little).toDouble(),
+    );
+
     final accel = [
-      byteData.getInt16(24, Endian.little).toDouble(),
-      byteData.getInt16(26, Endian.little).toDouble(),
-      byteData.getInt16(28, Endian.little).toDouble(),
+      byteData.getInt16(31, Endian.little).toDouble(),
+      byteData.getInt16(33, Endian.little).toDouble(),
+      byteData.getInt16(35, Endian.little).toDouble(),
     ];
 
     setState(() {
@@ -87,7 +100,17 @@ class DataScreenState extends State<DataScreen> {
 
       _dataIndex++;
 
-      for (final list in [_led1, _led2, _led3, _led4, _led5, _led6, _accelX, _accelY, _accelZ]) {
+      for (final list in [
+        _led1,
+        _led2,
+        _led3,
+        _led4,
+        _led5,
+        _led6,
+        _accelX,
+        _accelY,
+        _accelZ
+      ]) {
         if (list.length > _maxDataPoints) list.removeAt(0);
       }
     });
@@ -123,9 +146,12 @@ class DataScreenState extends State<DataScreen> {
               ),
             ),
           ),
-          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          bottomTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          bottomTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
         ),
         borderData: FlBorderData(show: false),
         gridData: FlGridData(show: true),

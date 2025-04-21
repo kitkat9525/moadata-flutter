@@ -18,7 +18,6 @@ class AFEScreenState extends State<AFEScreen> {
 
   int _hrm = 0;
   int _spo2 = 0;
-  int _rr = 0;
 
   @override
   void initState() {
@@ -46,27 +45,19 @@ class AFEScreenState extends State<AFEScreen> {
         serviceId: Uuid.parse('00001901-0000-1000-8000-00805f9b34fb'),
         deviceId: widget.device.id,
       ),
-      'rr': QualifiedCharacteristic(
-        characteristicId: Uuid.parse('0000190D-0000-1000-8000-00805f9b34fb'),
-        serviceId: Uuid.parse('00001901-0000-1000-8000-00805f9b34fb'),
-        deviceId: widget.device.id,
-      ),
     };
 
-    _subscriptions['hrm'] = _ble.subscribeToCharacteristic(_characteristics['hrm']!).listen(
-      (data) => setState(() => _hrm = data[0]),
-      onError: (e) => debugPrint('$e'),
-    );
+    _subscriptions['hrm'] =
+        _ble.subscribeToCharacteristic(_characteristics['hrm']!).listen(
+              (data) => setState(() => _hrm = data[0]),
+              onError: (e) => debugPrint('$e'),
+            );
 
-    _subscriptions['spo2'] = _ble.subscribeToCharacteristic(_characteristics['spo2']!).listen(
-      (data) => setState(() => _spo2 = data[0]),
-      onError: (e) => debugPrint('$e'),
-    );
-
-    _subscriptions['rr'] = _ble.subscribeToCharacteristic(_characteristics['rr']!).listen(
-      (data) => setState(() => _rr = data[0]),
-      onError: (e) => debugPrint('$e'),
-    );
+    _subscriptions['spo2'] =
+        _ble.subscribeToCharacteristic(_characteristics['spo2']!).listen(
+              (data) => setState(() => _spo2 = data[0]),
+              onError: (e) => debugPrint('$e'),
+            );
   }
 
   @override
@@ -100,22 +91,6 @@ class AFEScreenState extends State<AFEScreen> {
             title: const Text('SpO₂', style: TextStyle(fontSize: 14)),
             trailing: Text(
               '$_spo2%',
-              style: const TextStyle(
-                fontSize: 14,
-                color: Colors.black,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16.0),
-            child: Divider(),
-          ),
-          ListTile(
-            leading: const Icon(Icons.monitor_heart, color: Colors.red, size: 20),
-            title: const Text('R-R', style: TextStyle(fontSize: 14)),
-            trailing: Text(
-              '$_rr ms',
               style: const TextStyle(
                 fontSize: 14,
                 color: Colors.black,

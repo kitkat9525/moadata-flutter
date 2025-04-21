@@ -132,10 +132,12 @@ class IntroScreenState extends State<IntroScreen> {
     });
 
     try {
-      _ble.connectToDevice(
+      _ble
+          .connectToDevice(
         id: device.id,
         connectionTimeout: const Duration(seconds: 5),
-      ).listen(
+      )
+          .listen(
         (data) {
           if (data.connectionState == DeviceConnectionState.connected) {
             setState(() {
@@ -219,6 +221,9 @@ class HomeScreenState extends State<HomeScreen> {
         characteristicId: Uuid.parse('00002A2B-0000-1000-8000-00805f9b34fb'),
         deviceId: widget.device.id,
       );
+
+      final mtu = await _ble.requestMtu(deviceId: widget.device.id, mtu: 247);
+      debugPrint('📏 Negotiated MTU size: $mtu');
 
       final now = DateTime.now();
       final List<int> bytes = [
