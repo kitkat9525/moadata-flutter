@@ -174,7 +174,7 @@ class SettingScreenState extends State<SettingScreen> {
         byteAlignment: ImageUploadAlignment.fourByte,
         eraseAppSettings: true,
         pipelineDepth: 1,
-        firmwareUpgradeMode: FirmwareUpgradeMode.testAndConfirm,
+        firmwareUpgradeMode: FirmwareUpgradeMode.testOnly,
       );
 
       await updateManager.updateWithImageData(
@@ -201,7 +201,7 @@ class SettingScreenState extends State<SettingScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Text('uploading new signed image...'),
-                  const Text('(업로드 완료 후 디바이스 리부팅 1분 소요)'),
+                  const Text('(업로드 완료 후 리부팅 1분 소요)'),
                   const SizedBox(height: 20),
                   LinearProgressIndicator(value: _progress),
                   const SizedBox(height: 10),

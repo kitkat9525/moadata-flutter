@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/svg.dart';
@@ -47,6 +48,8 @@ class IntroScreenState extends State<IntroScreen> {
   final FlutterReactiveBle _ble = FlutterReactiveBle();
   final List<DiscoveredDevice> _devicesList = [];
 
+  late StreamSubscription<DiscoveredDevice> _scanSubscription;
+
   Timer? _timer;
   int _dot = 0;
 
@@ -57,15 +60,22 @@ class IntroScreenState extends State<IntroScreen> {
   @override
   void initState() {
     super.initState();
-    if (mounted) {
-      _requestPermissions();
-      _find();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _waitAndStart();
+    });
 
-      _timer = Timer.periodic(
-        const Duration(seconds: 1),
-        (_) => setState(() => _dot = (_dot % 3) + 1),
-      );
-    }
+    _timer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => setState(() => _dot = (_dot % 3) + 1),
+    );
+  }
+
+  Future<void> _waitAndStart() async {
+    await _requestPermissions();
+
+    // 🔧 플랫폼 초기화를 기다리기 위해 약간 딜레이
+    await Future.delayed(const Duration(milliseconds: 500));
+    _find();
   }
 
   @override
@@ -92,12 +102,13 @@ class IntroScreenState extends State<IntroScreen> {
       _devicesList.clear();
     });
 
-    _ble.scanForDevices(
+     _scanSubscription = _ble.scanForDevices(
       withServices: [],
       scanMode: ScanMode.lowLatency,
     ).listen(
       (device) {
         final index = _devicesList.indexWhere((d) => d.id == device.id);
+        debugPrint('bluetooth le device find: ${device.name}');
         setState(() {
           if (index >= 0) {
             _devicesList[index] = device;
@@ -132,14 +143,18 @@ class IntroScreenState extends State<IntroScreen> {
     });
 
     try {
+      await _scanSubscription.cancel();
+      await Future.delayed(const Duration(milliseconds: 300));
+
       _ble
           .connectToDevice(
         id: device.id,
-        connectionTimeout: const Duration(seconds: 5),
+        connectionTimeout: const Duration(seconds: 30),
       )
           .listen(
         (data) {
           if (data.connectionState == DeviceConnectionState.connected) {
+            debugPrint('bluetooth le connected.');
             setState(() {
               _isConnecting = false;
               _isConnected = true;
@@ -222,8 +237,10 @@ class HomeScreenState extends State<HomeScreen> {
         deviceId: widget.device.id,
       );
 
-      final mtu = await _ble.requestMtu(deviceId: widget.device.id, mtu: 247);
-      debugPrint('📏 Negotiated MTU size: $mtu');
+      if (Platform.isAndroid) {
+        final mtu = await _ble.requestMtu(deviceId: widget.device.id, mtu: 247);
+        debugPrint('📏 Negotiated MTU size: $mtu');
+      }
 
       final now = DateTime.now();
       final List<int> bytes = [
