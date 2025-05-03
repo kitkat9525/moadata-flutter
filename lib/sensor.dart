@@ -157,57 +157,57 @@ class SensorScreenState extends State<SensorScreen> {
       ),
       body: ListView(
         children: [
-          ListTile(
-            leading: const Icon(FontAwesomeIcons.microchip,
-                color: Colors.black, size: 20),
-            title: const Text('X axis (only AFE Mode)',
-                style: TextStyle(fontSize: 14)),
-            trailing: Text(
-              '$_x',
-              style: const TextStyle(
-                  fontSize: 14,
-                  color: Colors.black,
-                  fontWeight: FontWeight.bold),
-            ),
-          ),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16.0),
-            child: Divider(),
-          ),
-          ListTile(
-            leading: const Icon(FontAwesomeIcons.microchip,
-                color: Colors.black, size: 20),
-            title: const Text('Y axis (only AFE Mode)',
-                style: TextStyle(fontSize: 14)),
-            trailing: Text(
-              '$_y',
-              style: const TextStyle(
-                  fontSize: 14,
-                  color: Colors.black,
-                  fontWeight: FontWeight.bold),
-            ),
-          ),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16.0),
-            child: Divider(),
-          ),
-          ListTile(
-            leading: const Icon(FontAwesomeIcons.microchip,
-                color: Colors.black, size: 20),
-            title: const Text('Z axis (only AFE Mode)',
-                style: TextStyle(fontSize: 14)),
-            trailing: Text(
-              '$_z',
-              style: const TextStyle(
-                  fontSize: 14,
-                  color: Colors.black,
-                  fontWeight: FontWeight.bold),
-            ),
-          ),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16.0),
-            child: Divider(),
-          ),
+          // ListTile(
+          //   leading: const Icon(FontAwesomeIcons.microchip,
+          //       color: Colors.black, size: 20),
+          //   title: const Text('X axis (only AFE Mode)',
+          //       style: TextStyle(fontSize: 14)),
+          //   trailing: Text(
+          //     '$_x',
+          //     style: const TextStyle(
+          //         fontSize: 14,
+          //         color: Colors.black,
+          //         fontWeight: FontWeight.bold),
+          //   ),
+          // ),
+          // const Padding(
+          //   padding: EdgeInsets.symmetric(horizontal: 16.0),
+          //   child: Divider(),
+          // ),
+          // ListTile(
+          //   leading: const Icon(FontAwesomeIcons.microchip,
+          //       color: Colors.black, size: 20),
+          //   title: const Text('Y axis (only AFE Mode)',
+          //       style: TextStyle(fontSize: 14)),
+          //   trailing: Text(
+          //     '$_y',
+          //     style: const TextStyle(
+          //         fontSize: 14,
+          //         color: Colors.black,
+          //         fontWeight: FontWeight.bold),
+          //   ),
+          // ),
+          // const Padding(
+          //   padding: EdgeInsets.symmetric(horizontal: 16.0),
+          //   child: Divider(),
+          // ),
+          // ListTile(
+          //   leading: const Icon(FontAwesomeIcons.microchip,
+          //       color: Colors.black, size: 20),
+          //   title: const Text('Z axis (only AFE Mode)',
+          //       style: TextStyle(fontSize: 14)),
+          //   trailing: Text(
+          //     '$_z',
+          //     style: const TextStyle(
+          //         fontSize: 14,
+          //         color: Colors.black,
+          //         fontWeight: FontWeight.bold),
+          //   ),
+          // ),
+          // const Padding(
+          //   padding: EdgeInsets.symmetric(horizontal: 16.0),
+          //   child: Divider(),
+          // ),
           ListTile(
             leading: const Icon(Icons.touch_app, color: Colors.black, size: 20),
             title: const Text('Double Tap', style: TextStyle(fontSize: 14)),

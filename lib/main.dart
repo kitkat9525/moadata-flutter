@@ -214,7 +214,7 @@ class HomeScreenState extends State<HomeScreen> {
   late final List<Widget> _screens = [
     AFEScreen(device: widget.device),
     SensorScreen(device: widget.device),
-    DataScreen(device: widget.device),
+    // DataScreen(device: widget.device),
     SettingScreen(device: widget.device),
   ];
 
@@ -256,7 +256,7 @@ class HomeScreenState extends State<HomeScreen> {
         1,
       ];
 
-      await _ble.writeCharacteristicWithResponse(
+      await _ble.writeCharacteristicWithoutResponse(
         characteristic,
         value: bytes,
       );
@@ -289,10 +289,10 @@ class HomeScreenState extends State<HomeScreen> {
             icon: Icon(FontAwesomeIcons.microchip),
             label: 'Sensor',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.timeline),
-            label: 'Data',
-          ),
+          // BottomNavigationBarItem(
+          //   icon: Icon(Icons.timeline),
+          //   label: 'Data',
+          // ),
           BottomNavigationBarItem(
             icon: Icon(Icons.settings),
             label: 'Settings',
