@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:mcumgr_flutter/mcumgr_flutter.dart';
 import 'package:mcumgr_flutter/models/image_upload_alignment.dart';
 import 'package:mcumgr_flutter/models/firmware_upgrade_mode.dart';
+import 'package:nrf/ble_constants.dart';
 import 'package:nrf/ui_components.dart';
 import 'package:nrf/ui_constants.dart';
 
@@ -20,6 +21,7 @@ class SettingScreen extends StatefulWidget {
 }
 
 class SettingScreenState extends State<SettingScreen> {
+  final FlutterReactiveBle _ble = FlutterReactiveBle();
   double _progress = 0.0;
   bool _isUpdating = false;
   double _calibrationSeconds = 30;
@@ -111,37 +113,40 @@ class SettingScreenState extends State<SettingScreen> {
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 20),
-          _buildSliderItem(
-            label: '캘리브레이션 시간',
-            value: _calibrationSeconds,
+        _buildSliderItem(
+          label: '캘리브레이션 시간',
+          value: _calibrationSeconds,
             min: 0,
             max: 60,
             divisions: 60,
-            valueLabelBuilder: _formatSecondsLabel,
-            minLabel: '0초',
-            maxLabel: '1분',
-            onChanged: (value) => setState(() => _calibrationSeconds = value),
-          ),
+          valueLabelBuilder: _formatSecondsLabel,
+          minLabel: '0초',
+          maxLabel: '1분',
+          onChanged: (value) => setState(() => _calibrationSeconds = value),
+          onChangeEnd: (_) => _writeSystemSettings(),
+        ),
           const SizedBox(height: 20),
           _buildSliderItem(
             label: '측정 시간',
             value: _ppgOnMinutes,
             divisions: 60,
-            valueLabelBuilder: _formatMinutesLabel,
-            minLabel: '0분',
-            maxLabel: '1시간',
-            onChanged: (value) => setState(() => _ppgOnMinutes = value),
-          ),
+          valueLabelBuilder: _formatMinutesLabel,
+          minLabel: '0분',
+          maxLabel: '1시간',
+          onChanged: (value) => setState(() => _ppgOnMinutes = value),
+          onChangeEnd: (_) => _writeSystemSettings(),
+        ),
           const SizedBox(height: 20),
           _buildSliderItem(
             label: '꺼짐 시간',
             value: _ppgOffMinutes,
             divisions: 60,
-            valueLabelBuilder: _formatMinutesLabel,
-            minLabel: '0분',
-            maxLabel: '1시간',
-            onChanged: (value) => setState(() => _ppgOffMinutes = value),
-          ),
+          valueLabelBuilder: _formatMinutesLabel,
+          minLabel: '0분',
+          maxLabel: '1시간',
+          onChanged: (value) => setState(() => _ppgOffMinutes = value),
+          onChangeEnd: (_) => _writeSystemSettings(),
+        ),
         ],
       ),
     );
@@ -161,21 +166,23 @@ class SettingScreenState extends State<SettingScreen> {
             label: '측정 시간',
             value: _sleepOnMinutes,
             divisions: 60,
-            valueLabelBuilder: _formatMinutesLabel,
-            minLabel: '0분',
-            maxLabel: '1시간',
-            onChanged: (value) => setState(() => _sleepOnMinutes = value),
-          ),
+          valueLabelBuilder: _formatMinutesLabel,
+          minLabel: '0분',
+          maxLabel: '1시간',
+          onChanged: (value) => setState(() => _sleepOnMinutes = value),
+          onChangeEnd: (_) => _writeSystemSettings(),
+        ),
           const SizedBox(height: 20),
           _buildSliderItem(
             label: '꺼짐 시간',
             value: _sleepOffMinutes,
             divisions: 60,
-            valueLabelBuilder: _formatMinutesLabel,
-            minLabel: '0분',
-            maxLabel: '1시간',
-            onChanged: (value) => setState(() => _sleepOffMinutes = value),
-          ),
+          valueLabelBuilder: _formatMinutesLabel,
+          minLabel: '0분',
+          maxLabel: '1시간',
+          onChanged: (value) => setState(() => _sleepOffMinutes = value),
+          onChangeEnd: (_) => _writeSystemSettings(),
+        ),
         ],
       ),
     );
@@ -191,6 +198,7 @@ class SettingScreenState extends State<SettingScreen> {
     required String minLabel,
     required String maxLabel,
     required ValueChanged<double> onChanged,
+    ValueChanged<double>? onChangeEnd,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -222,6 +230,7 @@ class SettingScreenState extends State<SettingScreen> {
             divisions: divisions,
             value: value,
             onChanged: onChanged,
+            onChangeEnd: onChangeEnd,
           ),
         ),
         Row(
@@ -249,6 +258,32 @@ class SettingScreenState extends State<SettingScreen> {
   String _formatSecondsLabel(int seconds) {
     if (seconds == 60) return '1분';
     return '$seconds초';
+  }
+
+  Future<void> _writeSystemSettings() async {
+    final device = widget.device;
+    if (device == null) return;
+
+    final characteristic = QualifiedCharacteristic(
+      serviceId: BleConstants.sysService,
+      characteristicId: BleConstants.sysCharacteristic,
+      deviceId: device.id,
+    );
+
+    final payload = <int>[
+      _calibrationSeconds.round().clamp(0, 60).toInt(),
+      _ppgOnMinutes.round().clamp(0, 60).toInt(),
+      _ppgOffMinutes.round().clamp(0, 60).toInt(),
+      _sleepOnMinutes.round().clamp(0, 60).toInt(),
+      _sleepOffMinutes.round().clamp(0, 60).toInt(),
+    ];
+
+    try {
+      await _ble.writeCharacteristicWithResponse(characteristic, value: payload);
+      debugPrint('System settings updated: $payload');
+    } catch (e) {
+      debugPrint('Failed to update system settings: $e');
+    }
   }
 
   Widget _buildOtaButton() {
