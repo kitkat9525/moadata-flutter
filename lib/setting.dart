@@ -22,6 +22,7 @@ class SettingScreen extends StatefulWidget {
 
 class SettingScreenState extends State<SettingScreen> {
   final FlutterReactiveBle _ble = FlutterReactiveBle();
+  final ValueNotifier<double> _otaProgressNotifier = ValueNotifier<double>(0.0);
   double _progress = 0.0;
   bool _isUpdating = false;
   double _calibrationSeconds = 30;
@@ -29,6 +30,12 @@ class SettingScreenState extends State<SettingScreen> {
   double _ppgOffMinutes = 1;
   double _sleepOnMinutes = 1;
   double _sleepOffMinutes = 1;
+
+  @override
+  void dispose() {
+    _otaProgressNotifier.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -50,12 +57,10 @@ class SettingScreenState extends State<SettingScreen> {
                       _buildPpgIntervalSection(),
                       const SizedBox(height: 24),
                       _buildSleepIntervalSection(),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-              _buildOtaButton(),
+            ],
+          ),
+        ),
+      ),
             ],
           ),
         ),
@@ -324,8 +329,10 @@ class SettingScreenState extends State<SettingScreen> {
         _progress = 0.0;
         _isUpdating = true;
       });
+      _otaProgressNotifier.value = 0.0;
 
       _showOtaDialog();
+      await Future<void>.delayed(const Duration(milliseconds: 16));
 
       updateManager.setup();
 
@@ -337,7 +344,9 @@ class SettingScreenState extends State<SettingScreen> {
 
       updateManager.progressStream.listen((event) {
         if (mounted) {
-          setState(() => _progress = event.bytesSent / event.imageSize);
+          final progress = event.bytesSent / event.imageSize;
+          setState(() => _progress = progress);
+          _otaProgressNotifier.value = progress;
         }
       });
 
@@ -371,33 +380,24 @@ class SettingScreenState extends State<SettingScreen> {
       context: context,
       barrierDismissible: false,
       builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            // Use local setState to update progress in dialog
-            // In a more complex app, we'd use a ValueNotifier or a Stream
-            Timer.periodic(const Duration(milliseconds: 100), (timer) {
-              if (!_isUpdating) {
-                timer.cancel();
-              } else {
-                setDialogState(() {});
-              }
-            });
-
-            return AlertDialog(
-              title: const Text('OTA update'),
-              content: Column(
+        return AlertDialog(
+          title: const Text('OTA update'),
+          content: ValueListenableBuilder<double>(
+            valueListenable: _otaProgressNotifier,
+            builder: (context, progress, child) {
+              return Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Text('Uploading new signed image...'),
                   const Text('(1 minute reboot time after completion)', style: TextStyle(fontSize: 12)),
                   const SizedBox(height: 20),
-                  LinearProgressIndicator(value: _progress),
+                  LinearProgressIndicator(value: progress),
                   const SizedBox(height: 10),
-                  Text('${(_progress * 100).toStringAsFixed(1)}%'),
+                  Text('${(progress * 100).toStringAsFixed(1)}%'),
                 ],
-              ),
-            );
-          },
+              );
+            },
+          ),
         );
       },
     );

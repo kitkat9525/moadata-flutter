@@ -29,7 +29,7 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-        title: 'nRF54L15',
+        title: 'FLOFIT',
         theme: ThemeData(
           primarySwatch: Colors.blue,
           splashFactory: NoSplash.splashFactory,
@@ -46,7 +46,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class HomeScreenState extends State<HomeScreen> {
-  static const _targetDeviceName = 'nRF54L15';
+  static const _targetDeviceName = 'FLOFIT';
 
   final GlobalKey<DataScreenState> _dataKey = GlobalKey<DataScreenState>();
   final GlobalKey<DatabaseScreenState> _dbKey = GlobalKey<DatabaseScreenState>();
