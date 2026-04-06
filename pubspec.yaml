@@ -41,9 +41,10 @@ dependencies:
   file_picker: ^9.0.2
   font_awesome_flutter: ^10.6.0
   fl_chart: ^0.63.0
-
-dependency_overrides:
-  protobuf: ^3.1.0
+  flutter_local_notifications: ^18.0.1
+  sqflite: ^2.3.3+1
+  path: ^1.9.0
+  intl: ^0.19.0
 
 dev_dependencies:
   flutter_test:

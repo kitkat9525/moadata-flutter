@@ -6,11 +6,14 @@ import 'package:file_picker/file_picker.dart';
 import 'package:mcumgr_flutter/mcumgr_flutter.dart';
 import 'package:mcumgr_flutter/models/image_upload_alignment.dart';
 import 'package:mcumgr_flutter/models/firmware_upgrade_mode.dart';
+import 'package:nrf/ui_components.dart';
+import 'package:nrf/ui_constants.dart';
 
 class SettingScreen extends StatefulWidget {
-  final DiscoveredDevice device;
+  final DiscoveredDevice? device;
+  final Future<void> Function() onSyncTime;
 
-  const SettingScreen({super.key, required this.device});
+  const SettingScreen({super.key, required this.device, required this.onSyncTime});
 
   @override
   SettingScreenState createState() => SettingScreenState();
@@ -18,86 +21,250 @@ class SettingScreen extends StatefulWidget {
 
 class SettingScreenState extends State<SettingScreen> {
   double _progress = 0.0;
-  void Function(VoidCallback fn)? _dialogSetState;
-
-  @override
-  void initState() {
-    super.initState();
-  }
+  bool _isUpdating = false;
+  double _calibrationSeconds = 30;
+  double _ppgOnMinutes = 1;
+  double _ppgOffMinutes = 1;
+  double _sleepOnMinutes = 1;
+  double _sleepOffMinutes = 1;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Settings'),
-        centerTitle: false,
-        automaticallyImplyLeading: false,
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text(
-                  'Device (${widget.device.name})',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.normal,
+      backgroundColor: kScreenBackgroundColor,
+      body: SafeArea(
+        child: Padding(
+          padding: kScreenPadding,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildDeviceSection(),
+                      const SizedBox(height: 24),
+                      _buildPpgIntervalSection(),
+                      const SizedBox(height: 24),
+                      _buildSleepIntervalSection(),
+                    ],
                   ),
                 ),
-                Spacer(),
-                Icon(Icons.bluetooth, color: Colors.blue, size: 20),
-              ],
-            ),
-            SizedBox(height: 8),
-            Text(
-              'MAC Address',
-              style: TextStyle(fontSize: 14),
-            ),
-            Text(
-              widget.device.id,
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            SizedBox(height: 8),
-            Text(
-              'Firmware Version',
-              style: TextStyle(fontSize: 14),
-            ),
-            Text(
-              'v1.0.0',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-            ),
-            SizedBox(height: 8),
-            Text(
-              'Region',
-              style: TextStyle(fontSize: 14),
-            ),
-            Text(
-              'KOREA (KR)',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-            ),
-            Spacer(),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: () => _firmwareOverTheAir(widget.device.id),
-                icon: Icon(Icons.system_update),
-                label: Text('OTA update'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(
-                      0xFF00A9CE), // Change this to any color you want
-                  foregroundColor: Colors.white, // Text and icon color
-                  padding: EdgeInsets.symmetric(vertical: 16),
-                  textStyle:
-                      TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
               ),
+              const SizedBox(height: 24),
+              _buildOtaButton(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDeviceSection() {
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Device (${widget.device?.name ?? 'Not connected'})',
+                style: const TextStyle(fontSize: 18),
+              ),
+              const Spacer(),
+              Icon(
+                Icons.bluetooth,
+                color: widget.device == null ? Colors.grey : Colors.blue,
+                size: 20,
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _buildInfoItem('MAC Address', widget.device?.id ?? '--'),
+          const SizedBox(height: 16),
+          _buildInfoItem('Firmware Version', 'v1.0.0'),
+          const SizedBox(height: 16),
+          _buildInfoItem('Region', 'KOREA (KR)'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoItem(String label, String value) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(fontSize: 14, color: Colors.grey)),
+        Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+      ],
+    );
+  }
+
+  Widget _buildPpgIntervalSection() {
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '측정 주기 조절 (PPG)',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 20),
+          _buildSliderItem(
+            label: '캘리브레이션 시간',
+            value: _calibrationSeconds,
+            min: 0,
+            max: 60,
+            divisions: 60,
+            valueLabelBuilder: _formatSecondsLabel,
+            minLabel: '0초',
+            maxLabel: '1분',
+            onChanged: (value) => setState(() => _calibrationSeconds = value),
+          ),
+          const SizedBox(height: 20),
+          _buildSliderItem(
+            label: '측정 시간',
+            value: _ppgOnMinutes,
+            divisions: 60,
+            valueLabelBuilder: _formatMinutesLabel,
+            minLabel: '0분',
+            maxLabel: '1시간',
+            onChanged: (value) => setState(() => _ppgOnMinutes = value),
+          ),
+          const SizedBox(height: 20),
+          _buildSliderItem(
+            label: '꺼짐 시간',
+            value: _ppgOffMinutes,
+            divisions: 60,
+            valueLabelBuilder: _formatMinutesLabel,
+            minLabel: '0분',
+            maxLabel: '1시간',
+            onChanged: (value) => setState(() => _ppgOffMinutes = value),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSleepIntervalSection() {
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '측정 주기 조절 (수면)',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 20),
+          _buildSliderItem(
+            label: '측정 시간',
+            value: _sleepOnMinutes,
+            divisions: 60,
+            valueLabelBuilder: _formatMinutesLabel,
+            minLabel: '0분',
+            maxLabel: '1시간',
+            onChanged: (value) => setState(() => _sleepOnMinutes = value),
+          ),
+          const SizedBox(height: 20),
+          _buildSliderItem(
+            label: '꺼짐 시간',
+            value: _sleepOffMinutes,
+            divisions: 60,
+            valueLabelBuilder: _formatMinutesLabel,
+            minLabel: '0분',
+            maxLabel: '1시간',
+            onChanged: (value) => setState(() => _sleepOffMinutes = value),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSliderItem({
+    required String label,
+    required double value,
+    double min = 0,
+    double max = 60,
+    int? divisions,
+    required String Function(int value) valueLabelBuilder,
+    required String minLabel,
+    required String maxLabel,
+    required ValueChanged<double> onChanged,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              label,
+              style: const TextStyle(fontSize: 14, color: Colors.grey),
+            ),
+            const Spacer(),
+            Text(
+              valueLabelBuilder(value.round()),
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
             ),
           ],
+        ),
+        SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            activeTrackColor: kAccentColor,
+            inactiveTrackColor: Colors.grey.shade200,
+            thumbColor: kAccentColor,
+            overlayColor: kAccentColor.withOpacity(0.12),
+            trackHeight: 4,
+          ),
+          child: Slider(
+            min: min,
+            max: max,
+            divisions: divisions,
+            value: value,
+            onChanged: onChanged,
+          ),
+        ),
+        Row(
+          children: [
+            Text(
+              minLabel,
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+            ),
+            const Spacer(),
+            Text(
+              maxLabel,
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  String _formatMinutesLabel(int minutes) {
+    if (minutes == 60) return '1시간';
+    return '$minutes분';
+  }
+
+  String _formatSecondsLabel(int seconds) {
+    if (seconds == 60) return '1분';
+    return '$seconds초';
+  }
+
+  Widget _buildOtaButton() {
+    return AppCard(
+      child: SizedBox(
+        width: double.infinity,
+        child: FilledButton.icon(
+          onPressed: _isUpdating || widget.device == null ? null : () => _firmwareOverTheAir(widget.device!.id),
+          icon: const Icon(Icons.system_update),
+          label: const Text('OTA update'),
+          style: FilledButton.styleFrom(
+            backgroundColor: kAccentColor,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
         ),
       ),
     );
@@ -110,64 +277,34 @@ class SettingScreenState extends State<SettingScreen> {
         allowedExtensions: ['bin'],
       );
 
-      if (result == null || result.files.single.path == null) {
-        return;
-      }
+      if (result == null || result.files.single.path == null) return;
 
       final file = File(result.files.single.path!);
       final imageData = await file.readAsBytes();
 
       final managerFactory = FirmwareUpdateManagerFactory();
       final updateManager = await managerFactory.getUpdateManager(deviceId);
-      final updateStream = updateManager.setup();
-
+      
       setState(() {
         _progress = 0.0;
-        _showDialog();
+        _isUpdating = true;
       });
 
-      updateManager.updateStateStream?.listen(
-        (event) {
-          debugPrint('firmware update state: $event');
+      _showOtaDialog();
 
-          if (event == FirmwareUpgradeState.success) {
-            debugPrint('firmware update was successful.');
-            _hideDialog();
-          }
-        },
-        onDone: () async {
-          await updateManager.kill();
-          if (mounted) {
-            debugPrint('firmware update was successful.');
-            _hideDialog();
-          }
-        },
-        onError: (error) async {
-          await updateManager.kill();
-          if (mounted) {
-            debugPrint('firmware update failed: $error');
-            _hideDialog();
-          }
-        },
-      );
+      updateManager.setup();
 
-      updateManager.progressStream.listen((event) {
-        if (mounted) {
-          debugPrint(
-              'firmware update: ${event.bytesSent} / ${event.imageSize} bytes.');
-          setState(() {
-            _progress = event.bytesSent / event.imageSize;
-
-            if (_dialogSetState != null) {
-              _dialogSetState!(() {});
-            }
-          });
+      updateManager.updateStateStream?.listen((event) {
+        if (event == FirmwareUpgradeState.success) {
+          _onUpdateComplete();
         }
       });
 
-      updateManager.logger.logMessageStream.listen(
-        (log) => debugPrint(log.message),
-      );
+      updateManager.progressStream.listen((event) {
+        if (mounted) {
+          setState(() => _progress = event.bytesSent / event.imageSize);
+        }
+      });
 
       const configuration = FirmwareUpgradeConfiguration(
         estimatedSwapTime: Duration(seconds: 30),
@@ -183,42 +320,51 @@ class SettingScreenState extends State<SettingScreen> {
       );
     } catch (e) {
       debugPrint('Firmware update error: $e');
-      _hideDialog();
+      _onUpdateComplete();
     }
   }
 
-  void _showDialog() {
+  void _onUpdateComplete() {
+    if (mounted) {
+      setState(() => _isUpdating = false);
+      Navigator.of(context, rootNavigator: true).pop();
+    }
+  }
+
+  void _showOtaDialog() {
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) {
         return StatefulBuilder(
-          builder: (context, setState) {
-            _dialogSetState = setState; // capture setState from StatefulBuilder
+          builder: (context, setDialogState) {
+            // Use local setState to update progress in dialog
+            // In a more complex app, we'd use a ValueNotifier or a Stream
+            Timer.periodic(const Duration(milliseconds: 100), (timer) {
+              if (!_isUpdating) {
+                timer.cancel();
+              } else {
+                setDialogState(() {});
+              }
+            });
+
             return AlertDialog(
               title: const Text('OTA update'),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('uploading new signed image...'),
-                  const Text('(업로드 완료 후 리부팅 1분 소요)'),
+                  const Text('Uploading new signed image...'),
+                  const Text('(1 minute reboot time after completion)', style: TextStyle(fontSize: 12)),
                   const SizedBox(height: 20),
                   LinearProgressIndicator(value: _progress),
                   const SizedBox(height: 10),
                   Text('${(_progress * 100).toStringAsFixed(1)}%'),
                 ],
               ),
-              actions: [],
             );
           },
         );
       },
     );
-  }
-
-  void _hideDialog() {
-    setState(() {
-      Navigator.of(context, rootNavigator: true).pop();
-    });
   }
 }
