@@ -96,11 +96,14 @@ class AFEScreenState extends State<AFEScreen> {
   }
 
   void _init() {
-    _dataChar    = _buildChar(BleConstants.afeService,         BleConstants.afeDataCharacteristic);
-    _pamsChar    = _buildChar(BleConstants.pamsService,        BleConstants.pamsDataCharacteristic);
-    _batteryChar = _buildChar(BleConstants.batteryService,     BleConstants.batteryLevelCharacteristic);
-    _tempChar    = _buildChar(BleConstants.temperatureService, BleConstants.temperatureCharacteristic);
-    _notiChar    = _buildChar(BleConstants.notiService,        BleConstants.notiCharacteristic);
+    final device = widget.device;
+    if (device == null) return;
+
+    _dataChar    = _buildChar(device.id, BleConstants.afeService,         BleConstants.afeDataCharacteristic);
+    _pamsChar    = _buildChar(device.id, BleConstants.pamsService,        BleConstants.pamsDataCharacteristic);
+    _batteryChar = _buildChar(device.id, BleConstants.batteryService,     BleConstants.batteryLevelCharacteristic);
+    _tempChar    = _buildChar(device.id, BleConstants.temperatureService, BleConstants.temperatureCharacteristic);
+    _notiChar    = _buildChar(device.id, BleConstants.notiService,        BleConstants.notiCharacteristic);
 
     _subscribe(_dataChar,    _onDataReceived,    'data_t');
     _subscribe(_pamsChar,    _onPamsReceived,    'PAMS');
@@ -109,11 +112,11 @@ class AFEScreenState extends State<AFEScreen> {
     _subscribeBattery();
   }
 
-  QualifiedCharacteristic _buildChar(Uuid serviceId, Uuid charId) =>
+  QualifiedCharacteristic _buildChar(String deviceId, Uuid serviceId, Uuid charId) =>
       QualifiedCharacteristic(
         serviceId: serviceId,
         characteristicId: charId,
-        deviceId: widget.device!.id,
+        deviceId: deviceId,
       );
 
   void _subscribe(QualifiedCharacteristic char, void Function(List<int>) onData, String name) {
@@ -131,6 +134,7 @@ class AFEScreenState extends State<AFEScreen> {
       _onBatteryReceived,
       onError: (_) async {
         try {
+          if (!mounted || widget.device == null) return;
           final data = await _ble.readCharacteristic(_batteryChar);
           _onBatteryReceived(data);
         } catch (_) {}
@@ -140,7 +144,7 @@ class AFEScreenState extends State<AFEScreen> {
   }
 
   void _onDataReceived(List<int> data) {
-    if (data.length < 19) return;
+    if (!mounted || data.length < 19) return;
     try {
       final bleData = BleData.fromBytes(data);
       setState(() => _latestData = bleData);
@@ -151,7 +155,7 @@ class AFEScreenState extends State<AFEScreen> {
   }
 
   void _onPamsReceived(List<int> data) {
-    if (data.length < 8) return;
+    if (!mounted || data.length < 8) return;
     final step = data[4] | (data[5] << 8) | (data[6] << 16) | (data[7] << 24);
     String? activity;
     if (data.length >= 9) {
@@ -169,13 +173,13 @@ class AFEScreenState extends State<AFEScreen> {
   }
 
   void _onBatteryReceived(List<int> data) {
-    if (data.isEmpty) return;
+    if (!mounted || data.isEmpty) return;
     setState(() => _battery = data[0].clamp(0, 100));
   }
 
   void _onNotiReceived(List<int> data) {
+    if (!mounted || data.isEmpty) return;
     debugPrint('BLE Notification: $data');
-    if (data.isEmpty) return;
     final type = data[0];
     switch (type) {
       case 0x00: 
@@ -230,7 +234,7 @@ class AFEScreenState extends State<AFEScreen> {
   }
 
   void _onTempReceived(List<int> data) {
-    if (data.length < 5) return;
+    if (!mounted || data.length < 5) return;
     final b = ByteData.sublistView(Uint8List.fromList(data));
     setState(() => _temperature = b.getFloat32(1, Endian.little));
   }

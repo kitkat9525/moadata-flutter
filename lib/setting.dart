@@ -1,11 +1,14 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:mcumgr_flutter/mcumgr_flutter.dart';
 import 'package:mcumgr_flutter/models/image_upload_alignment.dart';
 import 'package:mcumgr_flutter/models/firmware_upgrade_mode.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:restart_app/restart_app.dart';
 import 'package:nrf/ble_constants.dart';
 import 'package:nrf/ui_components.dart';
 import 'package:nrf/ui_constants.dart';
@@ -23,8 +26,14 @@ class SettingScreen extends StatefulWidget {
 class SettingScreenState extends State<SettingScreen> {
   final FlutterReactiveBle _ble = FlutterReactiveBle();
   final ValueNotifier<double> _otaProgressNotifier = ValueNotifier<double>(0.0);
+  final ValueNotifier<String> _otaStatusNotifier = ValueNotifier<String>('');
+  
   double _progress = 0.0;
   bool _isUpdating = false;
+  
+  StreamSubscription? _updateStateSub;
+  StreamSubscription? _progressSub;
+  
   double _calibrationSeconds = 30;
   double _ppgOnMinutes = 1;
   double _ppgOffMinutes = 1;
@@ -34,34 +43,50 @@ class SettingScreenState extends State<SettingScreen> {
   @override
   void dispose() {
     _otaProgressNotifier.dispose();
+    _otaStatusNotifier.dispose();
+    _updateStateSub?.cancel();
+    _progressSub?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: kScreenBackgroundColor,
-      body: SafeArea(
-        child: Padding(
-          padding: kScreenPadding,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildDeviceSection(),
-                      const SizedBox(height: 24),
-                      _buildPpgIntervalSection(),
-                      const SizedBox(height: 24),
-                      _buildSleepIntervalSection(),
-            ],
-          ),
-        ),
-      ),
-            ],
+    return PopScope(
+      canPop: !_isUpdating, // 업데이트 중에는 뒤로가기 방지
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && _isUpdating) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('업데이트 진행 중에는 화면을 나갈 수 없습니다.')),
+          );
+        }
+      },
+      child: Scaffold(
+        backgroundColor: kScreenBackgroundColor,
+        body: SafeArea(
+          child: Padding(
+            padding: kScreenPadding,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildDeviceSection(),
+                        const SizedBox(height: 24),
+                        _buildPpgIntervalSection(),
+                        const SizedBox(height: 24),
+                        _buildSleepIntervalSection(),
+                        const SizedBox(height: 24),
+                        _buildOtaButton(),
+                        const SizedBox(height: 40),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -93,6 +118,30 @@ class SettingScreenState extends State<SettingScreen> {
           _buildInfoItem('Firmware Version', 'v1.0.0'),
           const SizedBox(height: 16),
           _buildInfoItem('Region', 'KOREA (KR)'),
+          
+          const SizedBox(height: 20),
+          const Divider(height: 1),
+          const SizedBox(height: 8),
+          
+          SizedBox(
+            width: double.infinity,
+            child: TextButton.icon(
+              onPressed: _isUpdating ? null : () async {
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.remove('last_device_id');
+                Restart.restartApp();
+              },
+              icon: const Icon(Icons.link_off, color: Colors.redAccent, size: 18),
+              label: const Text(
+                '기기 연결 해제',
+                style: TextStyle(color: Colors.redAccent, fontSize: 13, fontWeight: FontWeight.w600),
+              ),
+              style: TextButton.styleFrom(
+                alignment: Alignment.centerLeft,
+                padding: EdgeInsets.zero,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -284,10 +333,21 @@ class SettingScreenState extends State<SettingScreen> {
     ];
 
     try {
+      if (widget.device?.id != device.id) return;
       await _ble.writeCharacteristicWithResponse(characteristic, value: payload);
       debugPrint('System settings updated: $payload');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('설정이 기기에 저장되었습니다.'), duration: Duration(seconds: 1)),
+        );
+      }
     } catch (e) {
       debugPrint('Failed to update system settings: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('설정 저장에 실패했습니다. 연결 상태를 확인해주세요.')),
+        );
+      }
     }
   }
 
@@ -325,37 +385,68 @@ class SettingScreenState extends State<SettingScreen> {
       final managerFactory = FirmwareUpdateManagerFactory();
       final updateManager = await managerFactory.getUpdateManager(deviceId);
       
-      setState(() {
-        _progress = 0.0;
-        _isUpdating = true;
-      });
-      _otaProgressNotifier.value = 0.0;
+      if (mounted) {
+        setState(() {
+          _progress = 0.0;
+          _isUpdating = true;
+          _otaProgressNotifier.value = 0.0;
+          _otaStatusNotifier.value = '준비 중...';
+        });
+      }
 
       _showOtaDialog();
-      await Future<void>.delayed(const Duration(milliseconds: 16));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
 
       updateManager.setup();
 
-      updateManager.updateStateStream?.listen((event) {
-        if (event == FirmwareUpgradeState.success) {
-          _onUpdateComplete();
+      _updateStateSub = updateManager.updateStateStream?.listen((event) {
+        if (!mounted) return;
+        debugPrint('FOTA State: $event');
+        
+        switch (event) {
+          case FirmwareUpgradeState.none:
+            _otaStatusNotifier.value = '대기 중';
+            break;
+          case FirmwareUpgradeState.validate:
+            _otaStatusNotifier.value = '파일 검증 중...';
+            break;
+          case FirmwareUpgradeState.upload:
+            _otaStatusNotifier.value = '펌웨어 업로드 중...';
+            break;
+          case FirmwareUpgradeState.test:
+            _otaStatusNotifier.value = '테스트 부팅 중...';
+            break;
+          case FirmwareUpgradeState.confirm:
+            _otaStatusNotifier.value = '확정 중...';
+            break;
+          case FirmwareUpgradeState.reset:
+            _otaStatusNotifier.value = '기기 리셋 중...';
+            break;
+          case FirmwareUpgradeState.success:
+            _otaStatusNotifier.value = '업데이트 성공!';
+            Future.delayed(const Duration(seconds: 1), _onUpdateComplete);
+            break;
         }
+      }, onError: (e) {
+        debugPrint('FOTA State Error: $e');
+        _handleOtaError('업데이트 도중 오류가 발생했습니다.');
       });
 
-      updateManager.progressStream.listen((event) {
+      _progressSub = updateManager.progressStream.listen((event) {
         if (mounted) {
           final progress = event.bytesSent / event.imageSize;
-          setState(() => _progress = progress);
           _otaProgressNotifier.value = progress;
         }
+      }, onError: (e) {
+        debugPrint('FOTA Progress Error: $e');
       });
 
       const configuration = FirmwareUpgradeConfiguration(
         estimatedSwapTime: Duration(seconds: 30),
         byteAlignment: ImageUploadAlignment.fourByte,
-        eraseAppSettings: true,
+        eraseAppSettings: false, // 앱 설정 유지
         pipelineDepth: 1,
-        firmwareUpgradeMode: FirmwareUpgradeMode.testOnly,
+        firmwareUpgradeMode: FirmwareUpgradeMode.confirmOnly, // 확정 전용 모드로 변경
       );
 
       await updateManager.updateWithImageData(
@@ -363,12 +454,23 @@ class SettingScreenState extends State<SettingScreen> {
         configuration: configuration,
       );
     } catch (e) {
-      debugPrint('Firmware update error: $e');
+      debugPrint('Firmware update root error: $e');
+      _handleOtaError('기기와의 통신이 원활하지 않습니다.');
+    }
+  }
+
+  void _handleOtaError(String message) {
+    if (mounted) {
       _onUpdateComplete();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message), backgroundColor: Colors.redAccent),
+      );
     }
   }
 
   void _onUpdateComplete() {
+    _updateStateSub?.cancel();
+    _progressSub?.cancel();
     if (mounted) {
       setState(() => _isUpdating = false);
       Navigator.of(context, rootNavigator: true).pop();
@@ -381,22 +483,47 @@ class SettingScreenState extends State<SettingScreen> {
       barrierDismissible: false,
       builder: (context) {
         return AlertDialog(
-          title: const Text('OTA update'),
-          content: ValueListenableBuilder<double>(
-            valueListenable: _otaProgressNotifier,
-            builder: (context, progress, child) {
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('Uploading new signed image...'),
-                  const Text('(1 minute reboot time after completion)', style: TextStyle(fontSize: 12)),
-                  const SizedBox(height: 20),
-                  LinearProgressIndicator(value: progress),
-                  const SizedBox(height: 10),
-                  Text('${(progress * 100).toStringAsFixed(1)}%'),
-                ],
-              );
-            },
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('OTA 업데이트'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ValueListenableBuilder<String>(
+                valueListenable: _otaStatusNotifier,
+                builder: (context, status, _) => Text(
+                  status,
+                  style: const TextStyle(fontWeight: FontWeight.w600, color: kAccentColor),
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                '업데이트가 진행되는 동안 기기와 앱을\n가까이 두어 연결을 유지해 주세요.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(height: 24),
+              ValueListenableBuilder<double>(
+                valueListenable: _otaProgressNotifier,
+                builder: (context, progress, child) {
+                  return Column(
+                    children: [
+                      LinearProgressIndicator(
+                        value: progress,
+                        backgroundColor: Colors.grey.shade200,
+                        color: kAccentColor,
+                        minHeight: 8,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        '${(progress * 100).toStringAsFixed(1)}%',
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ],
           ),
         );
       },
