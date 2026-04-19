@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'package:intl/intl.dart';
-import 'package:nrf/ble_data_model.dart';
-import 'package:nrf/database_helper.dart';
-import 'package:nrf/ui_constants.dart';
+import 'package:nrf/data/ble_data_model.dart';
+import 'package:nrf/data/database_helper.dart';
+import 'package:nrf/shared/ui_constants.dart';
 
 class DatabaseScreen extends StatefulWidget {
   final DiscoveredDevice? device;
@@ -94,32 +94,20 @@ class DatabaseScreenState extends State<DatabaseScreen> {
       ],
       rows: _allData.map((data) {
         final timeStr = DateFormat('MMdd HH:mm:ss').format(data.timestamp);
-        
-        return DataRow(cells: [
-          // 시간
-          DataCell(Text(timeStr, style: TextStyle(color: Colors.grey.shade600, fontSize: 13))),
-          
-          // HEART RATE
-          DataCell(_buildValueCell(data.hr.toString(), 'bpm')),
-          
-          // SPO2
-          DataCell(_buildValueCell(data.spo2.toString(), '%')),
-          
-          // RR
-          DataCell(_buildValueCell(data.rr.toString(), 'ms')),
-          
-          // SDNN
-          DataCell(_buildValueCell(data.sdnn.toString(), 'ms')),
-          
-          // RMSSD
-          DataCell(_buildValueCell(data.rmssd.toString(), 'ms')),
 
-          // 스트레스
-          DataCell(_buildValueCell(data.stress.toString(), '/100', 
-              valueColor: data.stress > 70 ? Colors.red : (data.stress > 40 ? Colors.orange : Colors.green))),
-          
-          // 수면 (Mock)
-          DataCell(Text(_sleepLabel(data.sleep), style: TextStyle(color: Colors.grey.shade400))),
+        return DataRow(cells: [
+          DataCell(Text(timeStr, style: TextStyle(color: Colors.grey.shade600, fontSize: 13))),
+          DataCell(_buildValueCell(data.hr.toString(), 'bpm')),
+          DataCell(_buildValueCell(data.spo2.toString(), '%')),
+          DataCell(_buildValueCell(data.rr.toString(), 'ms')),
+          DataCell(_buildValueCell(data.sdnn.toString(), 'ms')),
+          DataCell(_buildValueCell(data.rmssd.toString(), 'ms')),
+          DataCell(_buildValueCell(data.stress.toString(), '/100',
+              valueColor: data.stress > 70
+                  ? Colors.red
+                  : (data.stress > 40 ? Colors.orange : Colors.green))),
+          DataCell(Text(_sleepLabel(data.sleep),
+              style: TextStyle(color: Colors.grey.shade400))),
         ]);
       }).toList(),
     );
@@ -127,11 +115,11 @@ class DatabaseScreenState extends State<DatabaseScreen> {
 
   String _sleepLabel(BleSleepType sleep) {
     return switch (sleep) {
-      BleSleepType.none => '없음',
-      BleSleepType.awake => '비수면',
-      BleSleepType.light => '얕은 수면',
-      BleSleepType.deep => '깊은 수면',
-      BleSleepType.rem => 'REM',
+      BleSleepType.none    => '없음',
+      BleSleepType.awake   => '비수면',
+      BleSleepType.light   => '얕은 수면',
+      BleSleepType.deep    => '깊은 수면',
+      BleSleepType.rem     => 'REM',
       BleSleepType.unknown => '-',
     };
   }

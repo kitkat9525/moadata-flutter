@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:nrf/ble_data_model.dart';
-import 'package:nrf/database_helper.dart';
-import 'package:nrf/ui_components.dart';
-import 'package:nrf/ui_constants.dart';
+import 'package:nrf/data/ble_data_model.dart';
+import 'package:nrf/data/database_helper.dart';
+import 'package:nrf/shared/ui_components.dart';
+import 'package:nrf/shared/ui_constants.dart';
 
 enum _SleepStage { none, awake, rem, light, deep }
 enum _AnalysisRange { minute, hour }
@@ -280,11 +280,11 @@ class _SleepChart extends StatelessWidget {
                           const SizedBox(height: 2),
                           RichText(
                             text: TextSpan(
-                              style: TextStyle(color: Colors.black),
+                              style: const TextStyle(color: Colors.black),
                               children: [
                                 TextSpan(
                                   text: hourText,
-                                  style: TextStyle(fontSize: 30, fontWeight: FontWeight.w500),
+                                  style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w500),
                                 ),
                                 const TextSpan(
                                   text: '시간 ',
@@ -292,7 +292,7 @@ class _SleepChart extends StatelessWidget {
                                 ),
                                 TextSpan(
                                   text: minuteText,
-                                  style: TextStyle(fontSize: 30, fontWeight: FontWeight.w500),
+                                  style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w500),
                                 ),
                                 const TextSpan(
                                   text: '분',
@@ -651,7 +651,7 @@ class _SleepChart extends StatelessWidget {
           border: Border.all(color: borderColor, width: segment.stage == _SleepStage.awake ? 0 : 1.2),
           boxShadow: [
             BoxShadow(
-              color: color.withOpacity(0.16),
+              color: color.withValues(alpha: 0.16),
               blurRadius: 6,
               offset: const Offset(0, 2),
             ),
@@ -885,10 +885,7 @@ class _TrendChart extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: EdgeInsets.zero,
-          child: AppSectionTitle(title: title),
-        ),
+        AppSectionTitle(title: title),
         AppCard(
           child: SizedBox(
             height: 180,
@@ -901,7 +898,7 @@ class _TrendChart extends StatelessWidget {
                     spots: spots,
                     isCurved: true,
                     dotData: const FlDotData(show: false),
-                    belowBarData: BarAreaData(show: true, color: color.withOpacity(0.1)),
+                    belowBarData: BarAreaData(show: true, color: color.withValues(alpha: 0.1)),
                     color: color,
                     barWidth: 3,
                   ),

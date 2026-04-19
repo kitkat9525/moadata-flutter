@@ -1,39 +1,69 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:nrf/afe.dart';
-import 'package:nrf/data.dart';
-import 'package:nrf/database.dart';
-import 'package:nrf/setting.dart';
-import 'package:nrf/ble_constants.dart';
-import 'package:nrf/notification_service.dart';
-import 'package:nrf/ui_constants.dart';
+import 'package:nrf/core/ble_service.dart';
+import 'package:nrf/core/notification_service.dart';
+import 'package:nrf/data/ble_constants.dart';
+import 'package:nrf/screens/afe_screen.dart';
+import 'package:nrf/screens/data_screen.dart';
+import 'package:nrf/screens/database_screen.dart';
+import 'package:nrf/screens/settings_screen.dart';
+import 'package:nrf/shared/ui_constants.dart';
+
+// ── 공통 유틸 ──────────────────────────────────────────────────────────────────
+
+/// BLE 사용에 필요한 블루투스·위치 권한을 요청한다.
+Future<void> _requestPermissions() async {
+  await [
+    Permission.bluetooth,
+    Permission.bluetoothScan,
+    Permission.bluetoothConnect,
+    Permission.location,
+  ].request();
+}
+
+/// 현재 시각을 BLE 시간 특성 포맷(10 bytes)으로 변환한다.
+///
+/// CTS(Current Time Service) 특성 구조:
+/// [yearLo, yearHi, month, day, hour, min, sec, weekday, fractions256, adjustReason]
+List<int> _buildTimeBytes() {
+  final now = DateTime.now();
+  return [
+    now.year & 0xFF,
+    (now.year >> 8) & 0xFF,
+    now.month,
+    now.day,
+    now.hour,
+    now.minute,
+    now.second,
+    now.weekday,
+    (now.millisecond * 256) ~/ 1000,
+    1,
+  ];
+}
+
+// ── App ────────────────────────────────────────────────────────────────────────
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  SystemChrome.setPreferredOrientations(
-    [
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
-    ],
-  );
+  SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
   await NotificationService.init();
-  
-  // SharedPreferences에서 마지막 연결된 기기 ID 가져오기
+
   final prefs = await SharedPreferences.getInstance();
-  final lastDeviceId = prefs.getString('last_device_id');
-  
+  final lastDeviceId = prefs.getString(kPrefLastDeviceId);
+
   runApp(MyApp(lastDeviceId: lastDeviceId));
 }
 
 class MyApp extends StatelessWidget {
   final String? lastDeviceId;
-  
+
   const MyApp({super.key, this.lastDeviceId});
 
   @override
@@ -43,26 +73,14 @@ class MyApp extends StatelessWidget {
           primarySwatch: Colors.blue,
           splashFactory: NoSplash.splashFactory,
         ),
-        // 마지막 연결 기기가 있으면 바로 홈 화면으로, 없으면 인트로 화면으로 이동
-        home: lastDeviceId != null 
-          ? const HomeScreen() 
-          : const IntroScreen(),
+        home: lastDeviceId != null ? const HomeScreen() : const IntroScreen(),
       );
 }
 
-// ─── Intro Screen ────────────────────────────────────────────────────────────
+// ── Intro Screen ───────────────────────────────────────────────────────────────
 
 class IntroScreen extends StatelessWidget {
   const IntroScreen({super.key});
-
-  Future<void> _requestPermissions() async {
-    await [
-      Permission.bluetooth,
-      Permission.bluetoothScan,
-      Permission.bluetoothConnect,
-      Permission.location,
-    ].request();
-  }
 
   Future<void> _onSearchPressed(BuildContext context) async {
     await _requestPermissions();
@@ -94,7 +112,6 @@ class IntroScreen extends StatelessWidget {
         child: Column(
           children: [
             const Spacer(),
-            // 중앙 로고 영역
             const Center(
               child: Text(
                 'FLOFIT',
@@ -102,12 +119,11 @@ class IntroScreen extends StatelessWidget {
                   fontSize: 48,
                   fontWeight: FontWeight.w900,
                   color: Color(0xFF111111),
-                  letterSpacing: 4.0, // 로고 느낌을 위한 넓은 자간
+                  letterSpacing: 4.0,
                 ),
               ),
             ),
             const Spacer(),
-            // 하단 버튼 영역
             Padding(
               padding: const EdgeInsets.fromLTRB(32, 0, 32, 48),
               child: SizedBox(
@@ -141,7 +157,7 @@ class IntroScreen extends StatelessWidget {
   }
 }
 
-// ─── Device List Bottom Sheet ─────────────────────────────────────────────────
+// ── Device List Bottom Sheet ───────────────────────────────────────────────────
 
 class _DeviceListSheet extends StatefulWidget {
   final void Function(DiscoveredDevice) onDeviceConnected;
@@ -153,13 +169,11 @@ class _DeviceListSheet extends StatefulWidget {
 }
 
 class _DeviceListSheetState extends State<_DeviceListSheet> {
-  final FlutterReactiveBle _ble = FlutterReactiveBle();
-  StreamSubscription<DiscoveredDevice>? _scanSubscription;
-  StreamSubscription<ConnectionStateUpdate>? _connectionSubscription;
+  final _ble = BleService.instance;
 
   final List<DiscoveredDevice> _devices = [];
   bool _isScanning = false;
-  String? _connectingDeviceId; // 현재 연결 시도 중인 기기 ID
+  String? _connectingDeviceId;
   String? _errorMessage;
 
   @override
@@ -170,8 +184,7 @@ class _DeviceListSheetState extends State<_DeviceListSheet> {
 
   @override
   void dispose() {
-    _scanSubscription?.cancel();
-    _connectionSubscription?.cancel();
+    _ble.stopScan();
     super.dispose();
   }
 
@@ -183,30 +196,28 @@ class _DeviceListSheetState extends State<_DeviceListSheet> {
         _devices.clear();
       });
     }
-    _scanSubscription?.cancel();
-    _scanSubscription = _ble
-        .scanForDevices(withServices: [], scanMode: ScanMode.lowLatency)
-        .listen(
-      (device) {
+
+    _ble.startScan(
+      onFound: (device) {
         if (!mounted) return;
+        if (device.name.isEmpty) return;
         if (!_devices.any((d) => d.id == device.id)) {
           setState(() => _devices.add(device));
         }
       },
-      onError: (_) {
+      onTimeout: () {
         if (mounted) setState(() => _isScanning = false);
       },
     );
   }
 
   void _stopScan() {
-    _scanSubscription?.cancel();
-    _scanSubscription = null;
+    _ble.stopScan();
     if (mounted) setState(() => _isScanning = false);
   }
 
   void _connectToDevice(DiscoveredDevice device) {
-    if (_connectingDeviceId != null) return; // 이미 다른 연결 진행 중이면 무시
+    if (_connectingDeviceId != null) return;
 
     _stopScan();
     setState(() {
@@ -214,29 +225,22 @@ class _DeviceListSheetState extends State<_DeviceListSheet> {
       _errorMessage = null;
     });
 
-    _connectionSubscription?.cancel();
-    _connectionSubscription = _ble
-        .connectToDevice(
-          id: device.id,
-          connectionTimeout: const Duration(seconds: 20),
-        )
-        .listen(
-      (update) {
-        if (update.connectionState == DeviceConnectionState.connected) {
-          _connectionSubscription?.cancel();
-          _connectionSubscription = null;
-          widget.onDeviceConnected(device);
-        } else if (update.connectionState == DeviceConnectionState.disconnected) {
-          if (mounted) {
-            setState(() {
-              _connectingDeviceId = null;
-              _errorMessage = '연결에 실패했습니다.';
-            });
-            _startScan();
-          }
+    _ble.connect(
+      device,
+      onConnected: () {
+        if (!mounted) return;
+        widget.onDeviceConnected(device);
+      },
+      onDisconnected: () {
+        if (mounted) {
+          setState(() {
+            _connectingDeviceId = null;
+            _errorMessage = '연결에 실패했습니다.';
+          });
+          _startScan();
         }
       },
-      onError: (e) {
+      onError: (_) {
         if (mounted) {
           setState(() {
             _connectingDeviceId = null;
@@ -259,7 +263,6 @@ class _DeviceListSheetState extends State<_DeviceListSheet> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // 핸들
           Container(
             width: 40,
             height: 4,
@@ -269,8 +272,6 @@ class _DeviceListSheetState extends State<_DeviceListSheet> {
             ),
           ),
           const SizedBox(height: 20),
-
-          // 헤더
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -285,9 +286,7 @@ class _DeviceListSheetState extends State<_DeviceListSheet> {
                       width: 16,
                       height: 16,
                       child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: kAccentColor,
-                      ),
+                          strokeWidth: 2, color: kAccentColor),
                     ),
                   const SizedBox(width: 8),
                   IconButton(
@@ -299,8 +298,7 @@ class _DeviceListSheetState extends State<_DeviceListSheet> {
               ),
             ],
           ),
-
-          if (_errorMessage != null)
+          if (_errorMessage != null && _connectingDeviceId == null)
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Text(
@@ -308,10 +306,7 @@ class _DeviceListSheetState extends State<_DeviceListSheet> {
                 style: const TextStyle(color: Colors.redAccent, fontSize: 13),
               ),
             ),
-
           const SizedBox(height: 8),
-
-          // 디바이스 목록
           _devices.isEmpty
               ? Padding(
                   padding: const EdgeInsets.symmetric(vertical: 40),
@@ -321,9 +316,7 @@ class _DeviceListSheetState extends State<_DeviceListSheet> {
                           size: 48, color: Colors.grey.shade300),
                       const SizedBox(height: 12),
                       Text(
-                        _isScanning
-                            ? '기기를 검색하고 있습니다...'
-                            : '검색된 기기가 없습니다',
+                        _isScanning ? '기기를 검색하고 있습니다...' : '검색된 기기가 없습니다',
                         style: TextStyle(color: Colors.grey.shade500),
                       ),
                     ],
@@ -341,8 +334,7 @@ class _DeviceListSheetState extends State<_DeviceListSheet> {
                     itemBuilder: (context, index) {
                       final device = _devices[index];
                       final isConnecting = _connectingDeviceId == device.id;
-                      final name = device.name.isNotEmpty ? device.name : '이름 없음';
-                      
+
                       return ListTile(
                         contentPadding: const EdgeInsets.symmetric(vertical: 4),
                         enabled: _connectingDeviceId == null || isConnecting,
@@ -350,34 +342,26 @@ class _DeviceListSheetState extends State<_DeviceListSheet> {
                           width: 44,
                           height: 44,
                           decoration: BoxDecoration(
-                            color: kAccentColor.withOpacity(0.1),
+                            color: kAccentColor.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          child: const Icon(Icons.bluetooth,
-                              color: kAccentColor, size: 22),
+                          child: const Icon(Icons.bluetooth, color: kAccentColor, size: 22),
                         ),
                         title: Text(
-                          name,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 15,
-                          ),
+                          device.name,
+                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
                         ),
                         subtitle: Text(
                           device.id,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.grey.shade400,
-                          ),
+                          style: TextStyle(fontSize: 11, color: Colors.grey.shade400),
                         ),
                         trailing: isConnecting
                             ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: kAccentColor,
-                                ),
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2),
                               )
                             : const Icon(Icons.chevron_right, color: Colors.grey),
                         onTap: () => _connectToDevice(device),
@@ -392,9 +376,11 @@ class _DeviceListSheetState extends State<_DeviceListSheet> {
   }
 }
 
-// ─── Home Screen ─────────────────────────────────────────────────────────────
+// ── Home Screen ────────────────────────────────────────────────────────────────
 
 class HomeScreen extends StatefulWidget {
+  /// [_DeviceListSheet]에서 선택한 기기.
+  /// null이면 SharedPreferences의 마지막 기기 ID로 자동 재연결한다.
   final DiscoveredDevice? selectedDevice;
 
   const HomeScreen({super.key, this.selectedDevice});
@@ -405,47 +391,59 @@ class HomeScreen extends StatefulWidget {
 
 class HomeScreenState extends State<HomeScreen> {
   static const _targetDeviceName = 'FLOFIT';
+  static const _initialReconnectDelay = Duration(seconds: 60);
+  static const _disconnectReconnectDelay = Duration(seconds: 5);
 
-  final GlobalKey<DataScreenState> _dataKey = GlobalKey<DataScreenState>();
-  final GlobalKey<DatabaseScreenState> _dbKey = GlobalKey<DatabaseScreenState>();
+  final _ble = BleService.instance;
 
-  final FlutterReactiveBle _ble = FlutterReactiveBle();
-  StreamSubscription<DiscoveredDevice>? _scanSubscription;
-  StreamSubscription<ConnectionStateUpdate>? _connectionSubscription;
+  /// 연결·해제 이벤트를 수신하는 BleService 기기 스트림 구독.
+  StreamSubscription<DiscoveredDevice?>? _deviceStreamSub;
+
+  final GlobalKey<AFEScreenState>       _afeKey  = GlobalKey<AFEScreenState>();
+  final GlobalKey<DataScreenState>     _dataKey = GlobalKey<DataScreenState>();
+  final GlobalKey<DatabaseScreenState> _dbKey   = GlobalKey<DatabaseScreenState>();
 
   int _selectedIndex = 0;
-  bool _isScanning = false;
-  bool _isConnecting = false;
+  bool _pendingReconnectToast = false;
   DiscoveredDevice? _device;
   String? _lastDeviceId;
 
-  List<Widget> get _screens {
-    return [
-      AFEScreen(device: _device),
-      DataScreen(key: _dataKey, device: _device),
-      DatabaseScreen(key: _dbKey, device: _device),
-      SettingScreen(device: _device, onSyncTime: _syncTime),
-    ];
-  }
+  List<Widget> get _screens => [
+        AFEScreen(key: _afeKey, device: _device),
+        DataScreen(key: _dataKey, device: _device),
+        DatabaseScreen(key: _dbKey, device: _device),
+        SettingScreen(device: _device, onSyncTime: _syncTime),
+      ];
 
   void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-
-    if (index == 1) { // Index for "분석" (DataScreen)
-      _dataKey.currentState?.loadData();
-    } else if (index == 2) { // Index for "데이터베이스" (DatabaseScreen)
-      _dbKey.currentState?.refreshData();
-    }
+    setState(() => _selectedIndex = index);
+    if (index == 0) _afeKey.currentState?.reloadBatteryPrefs();
+    if (index == 1) _dataKey.currentState?.loadData();
+    if (index == 2) _dbKey.currentState?.refreshData();
   }
 
   @override
   void initState() {
     super.initState();
+
+    _deviceStreamSub = _ble.deviceStream.listen((device) {
+      if (!mounted) return;
+      setState(() => _device = device);
+      if (device == null) _onDeviceDisconnected();
+    });
+
     _loadLastDeviceId().then((_) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (widget.selectedDevice != null) {
+        if (_ble.isConnected && _ble.connectedDevice != null) {
+          // DeviceListSheet에서 이미 연결된 상태로 진입한 경우
+          final device = _ble.connectedDevice!;
+          setState(() {
+            _device = device;
+            _lastDeviceId = device.id;
+          });
+          _saveLastDeviceId(device.id);
+          _syncTime();
+        } else if (widget.selectedDevice != null) {
           _connect(widget.selectedDevice!);
         } else {
           _startConnectionFlow();
@@ -456,24 +454,21 @@ class HomeScreenState extends State<HomeScreen> {
 
   Future<void> _loadLastDeviceId() async {
     final prefs = await SharedPreferences.getInstance();
-    if (mounted) {
-      setState(() {
-        _lastDeviceId = prefs.getString('last_device_id');
-      });
-    }
+    if (mounted) setState(() => _lastDeviceId = prefs.getString(kPrefLastDeviceId));
   }
 
   Future<void> _saveLastDeviceId(String id) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('last_device_id', id);
+    await prefs.setString(kPrefLastDeviceId, id);
   }
 
   @override
   void dispose() {
-    _scanSubscription?.cancel();
-    _connectionSubscription?.cancel();
+    _deviceStreamSub?.cancel();
     super.dispose();
   }
+
+  // ── 연결 플로우 ────────────────────────────────────────────────────────────
 
   Future<void> _startConnectionFlow() async {
     try {
@@ -481,192 +476,94 @@ class HomeScreenState extends State<HomeScreen> {
       await Future.delayed(const Duration(milliseconds: 500));
       _scanAndConnect();
     } catch (e) {
-      debugPrint('Permission/setup error: $e');
-      _showConnectionToast('블루투스 권한이 필요합니다');
+      debugPrint('[HomeScreen] Permission error: $e');
+      _showToast('블루투스 권한이 필요합니다');
     }
-  }
-
-  Future<void> _requestPermissions() async {
-    await [
-      Permission.bluetooth,
-      Permission.bluetoothScan,
-      Permission.bluetoothConnect,
-      Permission.location,
-    ].request();
   }
 
   void _scanAndConnect() {
-    if (_isScanning || _isConnecting) return;
-
-    setState(() => _isScanning = true);
-    _showConnectionToast(_lastDeviceId != null ? '기기 찾는 중...' : 'ring 검색 중');
-    _scanSubscription?.cancel();
-    _scanSubscription = _ble
-        .scanForDevices(
-      withServices: [],
-      scanMode: ScanMode.lowLatency,
-    )
-        .listen(
-      (device) {
-        // 마지막으로 연결했던 ID가 있다면 해당 ID를 우선 확인, 아니면 이름으로 확인
-        if (_lastDeviceId != null) {
-          if (device.id == _lastDeviceId) {
-            _connect(device);
-          }
-        } else if (device.name == _targetDeviceName) {
-          _connect(device);
-        }
-      },
-      onError: (e) {
-        debugPrint('Scan error: $e');
-        if (mounted) {
-          setState(() => _isScanning = false);
-        }
-        _showConnectionToast('블루투스 스캔에 실패했습니다');
+    _ble.startScan(
+      deviceId: _lastDeviceId,
+      deviceName: _lastDeviceId == null ? _targetDeviceName : null,
+      onFound: (device) => _connect(device),
+      onTimeout: () {
+        debugPrint('[HomeScreen] Scan timeout, retrying...');
+        final retryDelay = _pendingReconnectToast
+            ? _disconnectReconnectDelay
+            : _initialReconnectDelay;
+        Future.delayed(retryDelay, () {
+          if (mounted && !_ble.isConnected) _scanAndConnect();
+        });
       },
     );
   }
 
-  Future<void> _connect(DiscoveredDevice device) async {
-    if (_isConnecting) return;
-
-    setState(() {
-      _isConnecting = true;
-      _isScanning = false;
-    });
-    _showConnectionToast('연결 중...');
-
-    await _scanSubscription?.cancel();
-    _scanSubscription = null;
-    await _connectionSubscription?.cancel();
-
-    _connectionSubscription = _ble
-        .connectToDevice(
-      id: device.id,
-      connectionTimeout: const Duration(seconds: 30),
-    )
-        .listen(
-      (update) {
-        switch (update.connectionState) {
-          case DeviceConnectionState.connecting:
-            debugPrint('Bluetooth connecting...');
-            break;
-          case DeviceConnectionState.connected:
-            debugPrint('Bluetooth connected.');
-            final isFirstConnection = _device == null;
-            setState(() {
-              _device = device;
-              _isConnecting = false;
-              _lastDeviceId = device.id;
-            });
-            _saveLastDeviceId(device.id); // 성공 시 ID 저장
-            _showConnectionToast(isFirstConnection ? '연결되었습니다' : '재연결되었습니다');
-            _syncTime();
-            break;
-          case DeviceConnectionState.disconnected:
-            debugPrint('Bluetooth disconnected.');
-            _handleDisconnected();
-            break;
-          case DeviceConnectionState.disconnecting:
-            debugPrint('Bluetooth disconnecting...');
-            break;
-        }
+  void _connect(DiscoveredDevice device) {
+    _ble.connect(
+      device,
+      onConnected: () {
+        if (!mounted) return;
+        _showToast(_pendingReconnectToast ? '다시 연결되었습니다' : '연결되었습니다');
+        _pendingReconnectToast = false;
+        _saveLastDeviceId(device.id);
+        setState(() => _lastDeviceId = device.id);
+        _syncTime();
       },
-      onError: (e) {
-        debugPrint('Connection error: $e');
-        _handleDisconnected(showToast: _device == null);
-      },
+      onError: (e) => debugPrint('[HomeScreen] Connection error: $e'),
     );
   }
 
-  void _handleDisconnected({bool showToast = true}) {
-    final hadDevice = _device != null;
-    if (mounted) {
-      setState(() {
-        _isConnecting = false;
-        _isScanning = false;
-        _device = null;
-      });
-    }
-    if (showToast && hadDevice) {
-      _showConnectionToast('블루투스 연결이 끊어졌습니다');
-    }
-    Future.delayed(const Duration(seconds: 1), () {
-      if (mounted && _device == null && !_isScanning && !_isConnecting) {
-        _scanAndConnect();
-      }
+  void _onDeviceDisconnected() {
+    _pendingReconnectToast = true;
+    Future.delayed(_disconnectReconnectDelay, () {
+      if (mounted && !_ble.isConnected) _scanAndConnect();
     });
   }
 
-  void _showConnectionToast(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-  }
+  // ── 시간 동기화 ────────────────────────────────────────────────────────────
 
   Future<void> _syncTime() async {
-    final device = _device;
+    final device = _ble.connectedDevice;
     if (device == null) return;
 
-    // Wait a bit to ensure the connection is stable and services are discovered
+    // GATT 서비스 디스커버리 완료 대기
     await Future.delayed(const Duration(milliseconds: 1000));
-    
-    // Check if still mounted and device is still the same
-    if (!mounted || _device?.id != device.id) return;
+    if (!mounted || _ble.connectedDevice?.id != device.id) return;
+
+    final characteristic = QualifiedCharacteristic(
+      serviceId: BleConstants.timeService,
+      characteristicId: BleConstants.timeCharacteristic,
+      deviceId: device.id,
+    );
 
     int retryCount = 0;
     const maxRetries = 3;
 
     while (retryCount < maxRetries) {
       try {
-        final characteristic = QualifiedCharacteristic(
-          serviceId: BleConstants.timeService,
-          characteristicId: BleConstants.timeCharacteristic,
-          deviceId: device.id,
-        );
+        // Android MTU 협상은 첫 번째 시도에서만 수행
+        if (retryCount == 0) await _ble.requestMtu(device.id);
 
-        if (Platform.isAndroid && retryCount == 0) {
-          try {
-            await _ble.requestMtu(deviceId: device.id, mtu: 247).timeout(const Duration(seconds: 2));
-          } catch (e) {
-            debugPrint('MTU request failed: $e');
-          }
-        }
+        if (!mounted || _ble.connectedDevice?.id != device.id) return;
 
-        final now = DateTime.now();
-        final List<int> bytes = [
-          now.year & 0xFF,
-          (now.year >> 8) & 0xFF,
-          now.month,
-          now.day,
-          now.hour,
-          now.minute,
-          now.second,
-          now.weekday,
-          (now.millisecond * 256) ~/ 1000,
-          1,
-        ];
-
-        // Final check before write
-        if (!mounted || _device?.id != device.id) return;
-
-        await _ble.writeCharacteristicWithResponse(characteristic, value: bytes);
-        debugPrint('Time synced: $now (Attempt ${retryCount + 1})');
-        return; // Success
+        await _ble.writeCharacteristic(characteristic, _buildTimeBytes());
+        debugPrint('[HomeScreen] Time synced (attempt ${retryCount + 1})');
+        return;
       } catch (e) {
         retryCount++;
-        debugPrint('Error syncing time (Attempt $retryCount): $e');
+        debugPrint('[HomeScreen] Time sync failed (attempt $retryCount): $e');
         if (retryCount < maxRetries) {
           await Future.delayed(Duration(milliseconds: 500 * retryCount));
         }
       }
     }
+  }
+
+  void _showToast(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message), duration: const Duration(seconds: 2)));
   }
 
   @override

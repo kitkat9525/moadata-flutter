@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:nrf/ui_constants.dart';
+import 'package:nrf/shared/ui_constants.dart';
 
 class AppSectionTitle extends StatelessWidget {
   final String title;

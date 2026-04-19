@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:mcumgr_flutter/mcumgr_flutter.dart';
@@ -9,9 +8,10 @@ import 'package:mcumgr_flutter/models/image_upload_alignment.dart';
 import 'package:mcumgr_flutter/models/firmware_upgrade_mode.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:restart_app/restart_app.dart';
-import 'package:nrf/ble_constants.dart';
-import 'package:nrf/ui_components.dart';
-import 'package:nrf/ui_constants.dart';
+import 'package:nrf/core/ble_service.dart';
+import 'package:nrf/data/ble_constants.dart';
+import 'package:nrf/shared/ui_components.dart';
+import 'package:nrf/shared/ui_constants.dart';
 
 class SettingScreen extends StatefulWidget {
   final DiscoveredDevice? device;
@@ -24,21 +24,59 @@ class SettingScreen extends StatefulWidget {
 }
 
 class SettingScreenState extends State<SettingScreen> {
-  final FlutterReactiveBle _ble = FlutterReactiveBle();
+  final _ble = BleService.instance;
+
   final ValueNotifier<double> _otaProgressNotifier = ValueNotifier<double>(0.0);
   final ValueNotifier<String> _otaStatusNotifier = ValueNotifier<String>('');
-  
-  double _progress = 0.0;
+
   bool _isUpdating = false;
-  
+
   StreamSubscription? _updateStateSub;
   StreamSubscription? _progressSub;
-  
+
   double _calibrationSeconds = 30;
   double _ppgOnMinutes = 1;
   double _ppgOffMinutes = 1;
   double _sleepOnMinutes = 1;
   double _sleepOffMinutes = 1;
+
+  double _batteryMinMv = 3500;
+  double _batteryMaxMv = 4200;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPrefs();
+  }
+
+  Future<void> _loadPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _calibrationSeconds = (prefs.getInt(kPrefCalibSec)    ?? kDefaultCalibSec).toDouble();
+      _ppgOnMinutes       = (prefs.getInt(kPrefPpgOnMin)    ?? kDefaultPpgOnMin).toDouble().clamp(1, 60);
+      _ppgOffMinutes      = (prefs.getInt(kPrefPpgOffMin)   ?? kDefaultPpgOffMin).toDouble().clamp(1, 60);
+      _sleepOnMinutes     = (prefs.getInt(kPrefSleepOnMin)  ?? kDefaultSleepOnMin).toDouble().clamp(1, 60);
+      _sleepOffMinutes    = (prefs.getInt(kPrefSleepOffMin) ?? kDefaultSleepOffMin).toDouble().clamp(1, 60);
+      _batteryMinMv       = (prefs.getInt(kPrefBatteryMinMv) ?? kDefaultBatteryMinMv).toDouble();
+      _batteryMaxMv       = (prefs.getInt(kPrefBatteryMaxMv) ?? kDefaultBatteryMaxMv).toDouble();
+    });
+  }
+
+  Future<void> _saveIntervalPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(kPrefCalibSec,    _calibrationSeconds.round());
+    await prefs.setInt(kPrefPpgOnMin,    _ppgOnMinutes.round().clamp(1, 60).toInt());
+    await prefs.setInt(kPrefPpgOffMin,   _ppgOffMinutes.round().clamp(1, 60).toInt());
+    await prefs.setInt(kPrefSleepOnMin,  _sleepOnMinutes.round().clamp(1, 60).toInt());
+    await prefs.setInt(kPrefSleepOffMin, _sleepOffMinutes.round().clamp(1, 60).toInt());
+  }
+
+  Future<void> _saveBatteryVoltagePrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(kPrefBatteryMinMv, _batteryMinMv.round());
+    await prefs.setInt(kPrefBatteryMaxMv, _batteryMaxMv.round());
+  }
 
   @override
   void dispose() {
@@ -52,7 +90,7 @@ class SettingScreenState extends State<SettingScreen> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: !_isUpdating, // 업데이트 중에는 뒤로가기 방지
+      canPop: !_isUpdating,
       onPopInvokedWithResult: (didPop, result) {
         if (!didPop && _isUpdating) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -78,6 +116,8 @@ class SettingScreenState extends State<SettingScreen> {
                         _buildPpgIntervalSection(),
                         const SizedBox(height: 24),
                         _buildSleepIntervalSection(),
+                        const SizedBox(height: 24),
+                        _buildBatteryVoltageSection(),
                         const SizedBox(height: 24),
                         _buildOtaButton(),
                         const SizedBox(height: 40),
@@ -118,23 +158,24 @@ class SettingScreenState extends State<SettingScreen> {
           _buildInfoItem('Firmware Version', 'v1.0.0'),
           const SizedBox(height: 16),
           _buildInfoItem('Region', 'KOREA (KR)'),
-          
           const SizedBox(height: 20),
           const Divider(height: 1),
           const SizedBox(height: 8),
-          
           SizedBox(
             width: double.infinity,
             child: TextButton.icon(
-              onPressed: _isUpdating ? null : () async {
-                final prefs = await SharedPreferences.getInstance();
-                await prefs.remove('last_device_id');
-                Restart.restartApp();
-              },
+              onPressed: _isUpdating
+                  ? null
+                  : () async {
+                      final prefs = await SharedPreferences.getInstance();
+                      await prefs.remove(kPrefLastDeviceId);
+                      Restart.restartApp();
+                    },
               icon: const Icon(Icons.link_off, color: Colors.redAccent, size: 18),
               label: const Text(
                 '기기 연결 해제',
-                style: TextStyle(color: Colors.redAccent, fontSize: 13, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                    color: Colors.redAccent, fontSize: 13, fontWeight: FontWeight.w600),
               ),
               style: TextButton.styleFrom(
                 alignment: Alignment.centerLeft,
@@ -167,40 +208,42 @@ class SettingScreenState extends State<SettingScreen> {
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 20),
-        _buildSliderItem(
-          label: '캘리브레이션 시간',
-          value: _calibrationSeconds,
+          _buildSliderItem(
+            label: '캘리브레이션 시간',
+            value: _calibrationSeconds,
             min: 0,
             max: 60,
             divisions: 60,
-          valueLabelBuilder: _formatSecondsLabel,
-          minLabel: '0초',
-          maxLabel: '1분',
-          onChanged: (value) => setState(() => _calibrationSeconds = value),
-          onChangeEnd: (_) => _writeSystemSettings(),
-        ),
+            valueLabelBuilder: _formatSecondsLabel,
+            minLabel: '0초',
+            maxLabel: '1분',
+            onChanged: (value) => setState(() => _calibrationSeconds = value),
+            onChangeEnd: (_) => _writeSystemSettings(),
+          ),
           const SizedBox(height: 20),
           _buildSliderItem(
             label: '측정 시간',
             value: _ppgOnMinutes,
+            min: 1,
             divisions: 60,
-          valueLabelBuilder: _formatMinutesLabel,
-          minLabel: '0분',
-          maxLabel: '1시간',
-          onChanged: (value) => setState(() => _ppgOnMinutes = value),
-          onChangeEnd: (_) => _writeSystemSettings(),
-        ),
+            valueLabelBuilder: _formatMinutesLabel,
+            minLabel: '1분',
+            maxLabel: '1시간',
+            onChanged: (value) => setState(() => _ppgOnMinutes = value.clamp(1, 60)),
+            onChangeEnd: (_) => _writeSystemSettings(),
+          ),
           const SizedBox(height: 20),
           _buildSliderItem(
             label: '꺼짐 시간',
             value: _ppgOffMinutes,
+            min: 1,
             divisions: 60,
-          valueLabelBuilder: _formatMinutesLabel,
-          minLabel: '0분',
-          maxLabel: '1시간',
-          onChanged: (value) => setState(() => _ppgOffMinutes = value),
-          onChangeEnd: (_) => _writeSystemSettings(),
-        ),
+            valueLabelBuilder: _formatMinutesLabel,
+            minLabel: '1분',
+            maxLabel: '1시간',
+            onChanged: (value) => setState(() => _ppgOffMinutes = value.clamp(1, 60)),
+            onChangeEnd: (_) => _writeSystemSettings(),
+          ),
         ],
       ),
     );
@@ -219,24 +262,26 @@ class SettingScreenState extends State<SettingScreen> {
           _buildSliderItem(
             label: '측정 시간',
             value: _sleepOnMinutes,
+            min: 1,
             divisions: 60,
-          valueLabelBuilder: _formatMinutesLabel,
-          minLabel: '0분',
-          maxLabel: '1시간',
-          onChanged: (value) => setState(() => _sleepOnMinutes = value),
-          onChangeEnd: (_) => _writeSystemSettings(),
-        ),
+            valueLabelBuilder: _formatMinutesLabel,
+            minLabel: '1분',
+            maxLabel: '1시간',
+            onChanged: (value) => setState(() => _sleepOnMinutes = value.clamp(1, 60)),
+            onChangeEnd: (_) => _writeSystemSettings(),
+          ),
           const SizedBox(height: 20),
           _buildSliderItem(
             label: '꺼짐 시간',
             value: _sleepOffMinutes,
+            min: 1,
             divisions: 60,
-          valueLabelBuilder: _formatMinutesLabel,
-          minLabel: '0분',
-          maxLabel: '1시간',
-          onChanged: (value) => setState(() => _sleepOffMinutes = value),
-          onChangeEnd: (_) => _writeSystemSettings(),
-        ),
+            valueLabelBuilder: _formatMinutesLabel,
+            minLabel: '1분',
+            maxLabel: '1시간',
+            onChanged: (value) => setState(() => _sleepOffMinutes = value.clamp(1, 60)),
+            onChangeEnd: (_) => _writeSystemSettings(),
+          ),
         ],
       ),
     );
@@ -259,10 +304,7 @@ class SettingScreenState extends State<SettingScreen> {
       children: [
         Row(
           children: [
-            Text(
-              label,
-              style: const TextStyle(fontSize: 14, color: Colors.grey),
-            ),
+            Text(label, style: const TextStyle(fontSize: 14, color: Colors.grey)),
             const Spacer(),
             Text(
               valueLabelBuilder(value.round()),
@@ -275,7 +317,7 @@ class SettingScreenState extends State<SettingScreen> {
             activeTrackColor: kAccentColor,
             inactiveTrackColor: Colors.grey.shade200,
             thumbColor: kAccentColor,
-            overlayColor: kAccentColor.withOpacity(0.12),
+            overlayColor: kAccentColor.withValues(alpha: 0.12),
             trackHeight: 4,
           ),
           child: Slider(
@@ -289,15 +331,9 @@ class SettingScreenState extends State<SettingScreen> {
         ),
         Row(
           children: [
-            Text(
-              minLabel,
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
-            ),
+            Text(minLabel, style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
             const Spacer(),
-            Text(
-              maxLabel,
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
-            ),
+            Text(maxLabel, style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
           ],
         ),
       ],
@@ -334,11 +370,15 @@ class SettingScreenState extends State<SettingScreen> {
 
     try {
       if (widget.device?.id != device.id) return;
-      await _ble.writeCharacteristicWithResponse(characteristic, value: payload);
+      await _ble.writeCharacteristic(characteristic, payload);
+      await _saveIntervalPrefs(); // 기기 전송 성공 후 앱에도 저장
       debugPrint('System settings updated: $payload');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('설정이 기기에 저장되었습니다.'), duration: Duration(seconds: 1)),
+          const SnackBar(
+            content: Text('설정이 기기에 저장되었습니다.'),
+            duration: Duration(seconds: 1),
+          ),
         );
       }
     } catch (e) {
@@ -351,12 +391,65 @@ class SettingScreenState extends State<SettingScreen> {
     }
   }
 
+  Widget _buildBatteryVoltageSection() {
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '배터리 전압 범위',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '배터리 mV → % 변환 기준값',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+          ),
+          const SizedBox(height: 20),
+          _buildSliderItem(
+            label: '최소 전압 (방전)',
+            value: _batteryMinMv,
+            min: 3000,
+            max: 4000,
+            divisions: 20,
+            valueLabelBuilder: (v) => '${v}mV',
+            minLabel: '3000mV',
+            maxLabel: '4000mV',
+            onChanged: (value) {
+              if (value >= _batteryMaxMv) return;
+              setState(() => _batteryMinMv = value);
+            },
+            onChangeEnd: (_) => _saveBatteryVoltagePrefs(),
+          ),
+          const SizedBox(height: 20),
+          _buildSliderItem(
+            label: '최대 전압 (완충)',
+            value: _batteryMaxMv,
+            min: 3500,
+            max: 4500,
+            divisions: 20,
+            valueLabelBuilder: (v) => '${v}mV',
+            minLabel: '3500mV',
+            maxLabel: '4500mV',
+            onChanged: (value) {
+              if (value <= _batteryMinMv) return;
+              setState(() => _batteryMaxMv = value);
+            },
+            onChangeEnd: (_) => _saveBatteryVoltagePrefs(),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildOtaButton() {
     return AppCard(
       child: SizedBox(
         width: double.infinity,
         child: FilledButton.icon(
-          onPressed: _isUpdating || widget.device == null ? null : () => _firmwareOverTheAir(widget.device!.id),
+          onPressed: _isUpdating || widget.device == null
+              ? null
+              : () => _firmwareOverTheAir(widget.device!.id),
           icon: const Icon(Icons.system_update),
           label: const Text('OTA update'),
           style: FilledButton.styleFrom(
@@ -381,13 +474,11 @@ class SettingScreenState extends State<SettingScreen> {
 
       final file = File(result.files.single.path!);
       final imageData = await file.readAsBytes();
-
       final managerFactory = FirmwareUpdateManagerFactory();
       final updateManager = await managerFactory.getUpdateManager(deviceId);
-      
+
       if (mounted) {
         setState(() {
-          _progress = 0.0;
           _isUpdating = true;
           _otaProgressNotifier.value = 0.0;
           _otaStatusNotifier.value = '준비 중...';
@@ -402,7 +493,7 @@ class SettingScreenState extends State<SettingScreen> {
       _updateStateSub = updateManager.updateStateStream?.listen((event) {
         if (!mounted) return;
         debugPrint('FOTA State: $event');
-        
+
         switch (event) {
           case FirmwareUpgradeState.none:
             _otaStatusNotifier.value = '대기 중';
@@ -444,9 +535,9 @@ class SettingScreenState extends State<SettingScreen> {
       const configuration = FirmwareUpgradeConfiguration(
         estimatedSwapTime: Duration(seconds: 30),
         byteAlignment: ImageUploadAlignment.fourByte,
-        eraseAppSettings: false, // 앱 설정 유지
+        eraseAppSettings: false,
         pipelineDepth: 1,
-        firmwareUpgradeMode: FirmwareUpgradeMode.confirmOnly, // 확정 전용 모드로 변경
+        firmwareUpgradeMode: FirmwareUpgradeMode.confirmOnly,
       );
 
       await updateManager.updateWithImageData(
@@ -492,7 +583,8 @@ class SettingScreenState extends State<SettingScreen> {
                 valueListenable: _otaStatusNotifier,
                 builder: (context, status, _) => Text(
                   status,
-                  style: const TextStyle(fontWeight: FontWeight.w600, color: kAccentColor),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w600, color: kAccentColor),
                 ),
               ),
               const SizedBox(height: 12),
@@ -517,7 +609,8 @@ class SettingScreenState extends State<SettingScreen> {
                       const SizedBox(height: 12),
                       Text(
                         '${(progress * 100).toStringAsFixed(1)}%',
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.bold),
                       ),
                     ],
                   );
